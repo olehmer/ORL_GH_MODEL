@@ -50,6 +50,9 @@ function run_model()
     while count < iteration_limit && stop == false
         count += 1
 
+        for (i,layer) in enumerate(layers[end:-1:1]) #go from top to bottom
+            
+
 
 
 end
@@ -148,10 +151,6 @@ function read_hitran_data_h2o(wn_per_band=100)
         band.gamma0 = gamma0_sum/wn_per_band
         band.R2 = R2_sum
 
-        band.flux_up = 0
-        band.flux_down = 0
-        band.trans = 0
-        band.q = 1
 
         push!(bands, band)
             
