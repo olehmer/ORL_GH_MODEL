@@ -21,8 +21,9 @@ function run_model()
     initial_temp = 300 #initial surface temp [K]
     Jupiter_radius = 69911513 #[m]
     Jupiter_temp = 1000 #[k]
-    orbital_dist = 4.22E8 #[m]
+    orbital_dist = 4.22E8 #[m] orbital distance of Io
     iteration_limit = 200 #hopefully it'll converge before it hits this limit
+    gravity = 1.796 #[m/s2] Io gravity
 
     pressure_bot = cc_relation(t=initial_temp)
 
@@ -41,17 +42,39 @@ function run_model()
         push!(layers, l)
     end
 
-    get_band_toa_flux(orbital_dist,Jupiter_radius,Jupiter_temp,
-                      bands[1].start_wn, bands[end].end_wn, bands)
+    #get_band_toa_flux(orbital_dist,Jupiter_radius,Jupiter_temp,
+    #                  bands[1].start_wn, bands[end].end_wn, bands)
 
+    layer_absorption(layers[1], gravity)
+    plot(linspace(1,7000,length(layers[1].abs)),layers[1].abs)
+    xlabel("Wavenumber [cm-1]")
+    ylabel("Absorption")
+    return
     #begin radiative loop!
     count = 0
     stop = false #set to true if temp has converged
     while count < iteration_limit && stop == false
         count += 1
 
-        for (i,layer) in enumerate(layers[end:-1:1]) #go from top to bottom
+        for i=num_layers:-1:1 #go from top to bottom
+            #TODO handle first (top) layer case
+
+            layer_absorption(layers[i], gravity)
+            abs_flux = zeros(length(layers[i].abs))
+            for j in 1:length(abs_flux) #loop over the abs in each band
+                abs_flux[j] = layers[i].abs[j]*(layers[i].flux_up[j]+
+                                                layers[i].flux_down[j])
+
+
+
+                #TODO handle TOA and surface here
+
+
+            end
+        end
+
             
+    end
 
 
 

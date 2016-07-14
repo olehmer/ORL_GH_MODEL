@@ -14,9 +14,9 @@ accretion. It is based on the description of the Malkmus model from:
 module Malkmus
 using Globals
 
-function layer_transmittance(layer::LAYER, g)
+function layer_absorption(layer::LAYER, g)
     """
-    This is the top level function that will generate the transmittance for all
+    This is the top level function that will generate the absorption for all
     bands in the layer
     """
 
@@ -28,7 +28,7 @@ function layer_transmittance(layer::LAYER, g)
         delta = (band.end_wn - band.start_wn)*100 #convert from cm-1 to m-1
         trans = goody_random_overlap_transmittance(delta, band_sum)
         
-        layer.trans[i] = trans
+        layer.abs[i] = 1 - trans #store the absorption
     end
 
 
@@ -110,7 +110,7 @@ function goody_random_overlap_transmittance(delta, weight_sum)
     return t
 end
 
-export layer_transmittance
+export layer_absorption
 end #end module
 
 

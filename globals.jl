@@ -28,7 +28,7 @@ type LAYER
 
     flux_up::Vector{Float64}
     flux_down::Vector{Float64}
-    trans::Vector{Float64} #the transmittance in this layer
+    abs::Vector{Float64} #the absorption in this layer
 
     bands::Vector{BAND} #vector of bands
 
