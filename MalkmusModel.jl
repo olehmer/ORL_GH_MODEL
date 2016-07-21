@@ -20,7 +20,6 @@ function layer_absorption(layer::LAYER, g)
     bands in the layer
     """
 
-
     for (i,band) in enumerate(layer.bands)
         ls = weighted_path_strong(g, layer.p1, layer.p2, layer.T, band)
         p = (layer.p1 + layer.p2)/2
@@ -75,6 +74,7 @@ function weighted_path_strong(g,p1,p2,T,band::BAND)
 
     S_T = linestrength(T, band)
     S_T0 = linestrength(band.T0, band)
+
     ls = 1/g*S_T/S_T0*(band.T0/T)^band.n/band.p0*0.5*(p1^2-p2^2)
 
     return ls
@@ -106,7 +106,9 @@ function goody_random_overlap_transmittance(delta, weight_sum)
     """
 
 
-    t = exp(-1/delta*weight_sum)
+    D = 1.66 #diffusivity factor, to account for our 1D model - see p.76 of 
+             #David's book for a description
+    t = exp(-1/delta*weight_sum*D)
     return t
 end
 

@@ -15,9 +15,8 @@ type BAND
     S0::Float64 #the average linestrength at T0 
     R2::Float64 #the fitted Malkmus value R^2
     S::Float64 #the fitted Malkmus value S
-    toa_flux::Float64 #top of atmosphere flux for band [W m-2]
 
-    BAND() = new(0,0,0,0,0,0,0,0,0,0,0)
+    BAND() = new(0,0,0,0,0,0,0,0,0,0)
 end
 
 
@@ -41,6 +40,7 @@ end
 KB = 1.38E-23 #Boltzmann constant in [m2 kg s-2 K-1]
 H = 6.626E-34 #Planck constant in [J s]
 C = 2.99792458E8 #Speed of light [m s-1]                                          
+SIGMA = 5.67E-8 #Stefan-Boltzmann constant
 
 UP = 0
 DOWN = 1
@@ -80,10 +80,24 @@ function planck_function(T, v1, v2)
     """
     Return an array of the flux for each wavenumber v between v1 and v2 at 
     temperature T. NOTE: v1 < v1
+
+    If v1 and v2 are not integers the floor(v1) and floor(v2) will be used
+
+    The returned flux is scaled by pi to account for the flux from a hemisphere
+    of isotropic radiation.
+
+    Parameters:
+    T - the temperature of the body
+    v1 - the first wavenumber to consider
+    v2 - the final wavenumber to consider
+
+    Returns:
+    Bv - an array with containing v2-v1 entries (one per wavenumber), each entry
+    is the flux in [W m-2] at the given wavenumber
     """
 
-    v1 = v1
-    v2 = v2
+    v1 = floor(v1)
+    v2 = floor(v2)
     if v2-v1 < 1
         return []
     end
@@ -97,8 +111,8 @@ function planck_function(T, v1, v2)
         Bv[i] = c1*vs[i]^3/(exp(c2*vs[i]/T)-1)
     end
 
-    return Bv
+    return pi*Bv #scale by pi to account for flux over hemisphere
 end
 
-export BAND, LAYER, KB, H, C, UP, DOWN, cc_relation, planck_function
+export BAND, LAYER, KB, H, C, SIGMA, UP, DOWN, cc_relation, planck_function
 end #end module
