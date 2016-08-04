@@ -36,6 +36,16 @@ type LAYER
                                  zeros(num_bands),[])
 end
 
+type GAS
+    name::ASCIIString #gas name, ex H2O
+    R::Float64 #specific gas constant [J K-1 kg-1]
+    Lv::Float64 #latent heat [J kg-1]
+    p0::Float64 #reference pressure [Pa] for C-C relation
+    t0::Float64 #reference temperature [K] for C-C relation
+
+    GAS() = new("No Name",0,0,0,0)
+    GAS(name,R,Lv,p0,t0) = new(name,R,Lv,p0,t0)
+end
 
 KB = 1.38E-23 #Boltzmann constant in [m2 kg s-2 K-1]
 H = 6.626E-34 #Planck constant in [J s]
@@ -45,7 +55,11 @@ SIGMA = 5.67E-8 #Stefan-Boltzmann constant
 UP = 0
 DOWN = 1
 
-function cc_relation(;p=-1, t=-1, gas=1)
+
+
+WATER = GAS("H2O", 461.89, 2.425E6, 611.0, 273.15)
+
+function cc_relation(;p=-1, t=-1, gas::GAS=WATER)
     """
     Returns the Clausius-Clapeyron temp or pressure given the other
 
@@ -54,17 +68,10 @@ function cc_relation(;p=-1, t=-1, gas=1)
     gas - the gas in question, defaults to H2O
     """
 
-    R = 0
-    Lv = 0
-    p0 = 0
-    t0 = 0
-
-    if 1 == gas #water
-        R = 461.89 #gas constant for water [J K-1 kg-1]
-        Lv = 2.425E6 #latent heat of water vapor [J kg-1]
-        t0 = 273.15 #reference temp [K]
-        p0 = 611.0 #reference pressure [Pa]
-    end
+    R = gas.R
+    Lv = gas.Lv
+    p0 = gas.p0
+    t0 = gas.t0
 
     result = 0
     if p >= 0
@@ -114,5 +121,6 @@ function planck_function(T, v1, v2)
     return pi*Bv #scale by pi to account for flux over hemisphere
 end
 
-export BAND, LAYER, KB, H, C, SIGMA, UP, DOWN, cc_relation, planck_function
+
+export BAND, LAYER, GAS, KB, H, C, SIGMA, UP, DOWN, cc_relation, planck_function
 end #end module

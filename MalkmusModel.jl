@@ -11,7 +11,9 @@ accretion. It is based on the description of the Malkmus model from:
     referred to as PPC. Most of the equations are from chapter 4.4
 =#
 
+
 module Malkmus
+include("globals.jl")
 using Globals
 
 function layer_absorption(layer::LAYER, g)

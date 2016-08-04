@@ -18,22 +18,29 @@ function run_model(;
         pressure_top = 100, #pressure at the top of model [Pa]
         surface_T = -1, #initial surface temp [K]
         iteration_limit = 300, #hopefully it'll converge before it hits this limit
-        Jupiter_temp = 1000, #[k]
+        Source_temp = 5800, #[k]
         albedo = 0.1,
         ts = 10000)  #timestep for model [s]
 
     bands = read_hitran_data_h2o() #get all the absorption data into a layer
     bands_toa_flux = zeros(length(bands)) #flux at TOA in each band
 
-    Jupiter_radius = 69911513 #[m]
-    orbital_dist = 4.22E8 #[m] orbital distance of Io
+    #Source_radius = 69911513 #[m] Jupiter radius
+    surface_area = 4*pi*(1.8216E6)^2 #Io surface area [m2]
+    #orbital_dist = 4.22E8 #[m] orbital distance of Io
     gravity = 1.796 #[m/s2] Io gravity
+
+    #gravity = 9.8 #earth gravity [m s-2]
+    #surface_area = 4*pi*(6.371e6)^2 #earth surface area
+    Source_radius = 6.955E8 #solar radius [m]
+    orbital_dist = 0.9*1.496E11 #1 AU in [m]
+
     cp = 2.02E3 #specific heat of water gas [J kg-1 K-1]
 
     if surface_T < 0
         #the user hasn't specified a temp, just set it to be in balance
         #with incoming flux
-        flux = SIGMA*Jupiter_temp^4*(4*pi*Jupiter_radius^2)/(4*pi*orbital_dist^2)
+        flux = SIGMA*Source_temp^4*(4*pi*Source_radius^2)/(4*pi*orbital_dist^2)
         surface_T = (flux*(1-albedo)/(SIGMA*4))^0.25
     end
     initial_temp = surface_T
@@ -44,6 +51,7 @@ function run_model(;
     if pressure_bot < pressure_top
         println("The pressure at the bottom of the atmosphere is lower than the
         upper limit")
+        println("Surface Temperature: ",surface_T, "[K]")
         return
     end
 
@@ -62,7 +70,7 @@ function run_model(;
 
     update_pressure(layers,pressures)
 
-    get_band_toa_flux(orbital_dist,Jupiter_radius,Jupiter_temp,
+    get_band_toa_flux(orbital_dist,Source_radius,Source_temp,
                       bands[1].start_wn, bands[end].end_wn, 
                       bands_toa_flux,bands,albedo)
 
@@ -72,15 +80,23 @@ function run_model(;
     count = 0
     converged = false
 
+    capacity = 200000 #convergence independent
+
     while count < iteration_limit && converged == false
         count += 1
 
         for i=num_layers:-1:1 #go from top to bottom
-            surface_T = update_layer_at_index2(layers,i,gravity,ts,cp,surface_T)
+            #This is the radiative balance step
+            surface_T = update_layer_at_index(layers,i,gravity,ts,cp,surface_T)
         end
+
+
 
         #now that we have the surface temperature, update the atmospheric
         #pressure from the CC relation
+
+        #TODO put this in a function
+        #TODO take into account the latent heat of water vapor!
         pressure_bot = cc_relation(t=surface_T)
         if pressure_bot < pressure_top
             #=
@@ -102,6 +118,8 @@ function run_model(;
 
         #update each layer
         update_pressure(layers,pressures)
+
+        convective_adjustment_pure_h2o(layers, surface_T, gravity, cp, surface_area, capacity)
 
 
         println("COUNT=",count,", Surface Temp = ", Int(round(surface_T)), ", TOA Temp = ",Int(round(layers[end].T)))
@@ -128,6 +146,10 @@ function run_model(;
 end
 
 function update_pressure(layers::Vector{LAYER}, pressures)
+    """
+    Helper function to set the layer pressures so that the atmosphere
+    is in hydrostatic equilibrium
+    """
     for i in 1:length(layers)
         layers[i].p1 = pressures[i]
         layers[i].p2 = pressures[i+1]
@@ -135,7 +157,94 @@ function update_pressure(layers::Vector{LAYER}, pressures)
 end
 
 
-function update_layer_at_index2(layers, i, gravity, ts, cp, surface_T)
+function convective_adjustment_pure_h2o(layers, surface_T, gravity, cp, area, capacity)
+    """
+    Handle the convective adjustment to the temperature profile. For now the
+    specific heat is assumed constant.
+
+    The convective adjustment works by starting with the bottom layer. It looks
+    at pairs of layers (so layer i and i-1) to see if they are unstable. If 
+    they are, the temperatures are adjusted so that they follow the atmospheric
+    adiabat - for a pure H2O atmosphere this is the Clausius-Clapeyron relation.
+
+    Inputs:
+    layers - the array of layers
+    surface_T - the surface temperature
+    gravity - the gravity of the planet/moon
+    cp - the specific heat at contant pressure of the atmosphere
+    area - the area of the body NOTE: this is assumed constant with height
+    capacity - the heat capacity of the surface
+
+    Returns:
+    surface_T - the new surface temperature
+    """
+
+    count = 0
+    max_iter = 20 #typically will converge rapidly
+
+    layer_mass = zeros(length(layers)) #store the mass in each layer
+    #we're only storing it to save time later, and makes the code cleaner
+
+    not_converged = true #set to false when convection shuts off
+    while not_converged && count < max_iter 
+        count += 1
+
+        not_converged = false #set to false, if we update a layer it'll be true
+
+        for i=1:length(layers)
+            sat_T = cc_relation(p=(layers[i].p1+layers[i].p2)/2)
+            if layers[i].T < sat_T
+                #the layer is below the adiabatic rate
+                not_converged = true 
+
+                delta_T = sat_T - layers[i].T
+                delta_p = layers[1].p1 - layers[1].p2 
+
+                #=
+                An important note about the mass, m. I've assumed that the 
+                radius of the body is much larger than the height of the 
+                atmosphere so area and gravity will be roughly constant over
+                the range we're interested in. However, this is likely not
+                valid for bodies like Titan so this is something to look at
+                for future models
+                =#
+                m = area*delta_p/gravity 
+
+                delta_E = m*delta_T*cp
+                layer_mass[i] = m #store to use with other layers
+
+                layers[i].T = sat_T
+
+                #make sure energy is conserved, take delta_E from the layer below
+                if 1==i #this is the first layer, right above the ground
+                    dT = delta_E/capacity
+                    surface_T -= dT
+                else
+                    #not the surface
+                    #set the temperature of the layer below
+                    layers[i-1].T -= delta_E/layer_mass[i-1]/cp
+                end
+            end
+        end
+    end
+    return surface_T
+end
+
+
+function update_layer_at_index(layers, i, gravity, ts, cp, surface_T, capacity)
+    """
+    Update the fluxes and temperatures at the given layer
+
+    Inputs:
+    layers - the array of layers
+    i - the index of the layer in question
+    gravity - the gravity of the world
+    ts - the timestep
+    cp - the specific heat at constant pressure
+    surface_T - the current surface temperature
+    capacity - the thermal capacity of the surface (convergence does not depend
+               on this value)
+    """
 
     layer_absorption(layers[i], gravity)
 
@@ -169,7 +278,6 @@ function update_layer_at_index2(layers, i, gravity, ts, cp, surface_T)
 
         surface_abs = 0.5*emitted_flux + (1-layers[i].abs).*layers[i].flux_down
 
-        capacity = 200000 #convergence does not depend on this value
         #TODO make convergence run dependent to speed up convergence
         surface_T -= sum(surface_emiss-surface_abs)*ts/capacity
 
@@ -178,58 +286,6 @@ function update_layer_at_index2(layers, i, gravity, ts, cp, surface_T)
         layers[i].flux_up = surface_emiss
     end
 
-    return surface_T
-end
-
-function update_layer_at_index(layers, i, gravity, ts, cp, surface_T)
-    layer_absorption(layers[i], gravity)
-
-    #get the absorbed flux
-    a_flux = layers[i].abs.*(layers[i].flux_up+layers[i].flux_down)
-    e_flux_temp = planck_function(layers[i].T, layers[i].bands[1].start_wn,
-                             layers[i].bands[end].end_wn) #emitted flux
-
-    e_flux = convert_planck_to_bands(e_flux_temp, layers[i].bands)
-    e_flux = layers[i].abs.*e_flux #Kirchoff's law
-
-    T_new = layers[i].T - gravity/cp*((sum(e_flux)-sum(a_flux))/
-            (layers[i].p1-layers[i].p2))*ts
-
-    layers[i].T = T_new
-
-    trans = 1 - layers[i].abs
-
-    #set the flux on the surrounding layers
-    if i < length(layers) #this isn't the top, so set the layer above
-        layers[i+1].flux_up = 0.5*e_flux + trans.*layers[i].flux_up
-    end
-
-    if i > 1 #not the bottom layer
-        layers[i-1].flux_down = 0.5*e_flux + trans.*layers[i].flux_down
-    else
-        #this is the bottom layer
-        cp_liquid = 4200 #specific heat of water, [J K-1 kg-1]
-        io_area = 4*pi*(1.821E6)^2
-        ocean_mass = io_area*0.5*1000 #approx mass of 0.5m ocean
-
-        s_e_flux_temp = planck_function(surface_T, layers[i].bands[1].start_wn,
-                      layers[i].bands[end].end_wn) #emitted flux
-        s_e_flux = convert_planck_to_bands(s_e_flux_temp, layers[i].bands)
-
-        layer_flux_down = 0.5*e_flux + trans.*layers[i].flux_down
-
-
-        println("net flux up from surface: ",sum(s_e_flux-layer_flux_down))
-
-        delta_T = sum(layer_flux_down-s_e_flux)*io_area/ocean_mass/cp_liquid*ts
-
-        #we assume the surface absorbs everything in the IR
-        surface_T = surface_T + delta_T
-
-        surface_T = surface_T<0?0:surface_T
-
-        layers[i].flux_up = s_e_flux
-    end
     return surface_T
 end
 
@@ -305,7 +361,8 @@ function read_hitran_data_h2o(wn_per_band=100)
         A layer object with all the bands initialized
     """
 
-    hitran_data = readdlm("HITRAN/HITRAN_H20_WN1_to_WN7000.txt",',', skipstart=1)
+    #hitran_data = readdlm("HITRAN/WN_1_TO_7000/HITRAN_H20_WN1_to_WN7000.txt",',', skipstart=1)
+    hitran_data = readdlm("HITRAN/WN_1_TO_25700/57904e08.out",',', skipstart=1)
     num_bands = Int(floor(size(hitran_data)[1]/wn_per_band))
 
     hitran_wns = hitran_data[:,2] #cm-1
